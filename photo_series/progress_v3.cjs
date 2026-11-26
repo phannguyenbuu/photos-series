@@ -1,0 +1,40 @@
+const { chromium } = require('@playwright/test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+(async () => {
+  const recovery = JSON.parse(fs.readFileSync('output/photo-series-v3-test/recovery.json', 'utf8'));
+  const browser = await chromium.launch({ channel: 'chrome', headless: true });
+  const context = await browser.newContext({ viewport: { width: 1083, height: 809 }, permissions: ['local-network-access'] });
+  const cdp = await browser.newBrowserCDPSession();
+  const contexts = await cdp.send('Target.getBrowserContexts');
+  await cdp.send('Browser.setPermission', { permission: { name: 'loopback-network' }, setting: 'granted', origin: 'https://dir.toolxprint.com', browserContextId: contexts.browserContextIds[0] });
+  const page = await context.newPage();
+  await page.goto(`https://dir.toolxprint.com/?view=photo-series&photo_job=${recovery.previous_job_id}`, { waitUntil: 'domcontentloaded' });
+  await page.waitForURL(`**photo_job=${recovery.replacement_job_id}`);
+  await page.getByText('PrintAgent đã kết nối', { exact: true }).waitFor();
+  await page.getByText('107 nhóm ảnh', { exact: false }).first().waitFor();
+  const api = `http://127.0.0.1:9173/api/photo-series/jobs/${recovery.replacement_job_id}`;
+  const job = await (await context.request.get(api)).json();
+  assert.equal(job.series.length, 107);
+  const names = ['DSC04234.JPG', 'DSC04236.JPG', 'DSC04240.JPG', 'DSC04242.JPG', 'DSC04245.JPG', 'DSC04247.JPG'];
+  const indices = names.map(name => job.series.findIndex(group => group.images.some(image => image.filename === name)));
+  assert.ok(indices.every(index => index === indices[0]));
+  let liveTimer = false;
+  if (job.running) {
+    const timer = page.getByRole('timer', { name: 'Thời gian đã xử lý' });
+    await timer.waitFor();
+    const before = await timer.innerText();
+    await page.waitForFunction(value => document.querySelector('[role="timer"]').textContent !== value, before, { timeout: 6000 });
+    assert.equal(await page.getByRole('button', { name: 'Hủy tiến trình', exact: true }).count(), 1);
+    liveTimer = true;
+  }
+  await page.screenshot({ path: path.resolve('output/photo-series-v3-test/progress-and-groups.png'), fullPage: true });
+  await page.getByRole('button', { name: `Xem nhóm ${indices[0]+1}`, exact: true }).click();
+  await page.getByText('Thời gian chụp (EXIF):', { exact: false }).waitFor();
+  await page.getByRole('button', { name: 'Đóng', exact: true }).click();
+  const report = { redirectedToCorrectedJob: true, groups: 107, carExamplesInOneGroup: true, liveTimer, cancelButton: liveTimer ? 'visible, not clicked on user work' : 'hidden because completed', exifRange: 'visible' };
+  fs.writeFileSync('output/photo-series-v3-test/ui-progress-report.json', JSON.stringify(report, null, 2));
+  console.log(JSON.stringify(report));
+  await browser.close();
+})().catch(error => { console.error(error); process.exit(1); });

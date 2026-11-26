@@ -1,0 +1,542 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tích hợp Ảnh theo series — Module Federation, Iframe &amp; REST API</title>
+<meta name="description" content="Hướng dẫn lập trình viên tích hợp module Ảnh theo series (lọc ảnh trong thư mục qua PrintAgent cục bộ) bằng Module Federation (Vite & Webpack 5), Iframe hoặc REST API.">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<style>
+:root{
+  --bg:#f7f8fa;--surface:#fff;--text:#1b1f24;--muted:#5b6470;--border:#e2e5ea;
+  --accent:#1f6feb;--accent-soft:#e8f0fe;--code-bg:#f1f3f6;--warn-bg:#fff6e5;--warn-border:#f0c36d;
+  --ok:#1a7f37;--ok-bg:#eaf7ee;--bad:#cf222e;
+}
+@media (prefers-color-scheme: dark){
+  :root{--bg:#0f1216;--surface:#161b22;--text:#e6edf3;--muted:#9aa4b0;--border:#2a313b;
+    --accent:#4c8dff;--accent-soft:#16233a;--code-bg:#1d232c;--warn-bg:#2a2210;--warn-border:#8a6a1f;
+    --ok:#3fb950;--ok-bg:#132a1c;--bad:#f85149;}
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.65 system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif}
+.wrap{max-width:1100px;margin:0 auto;padding:24px 16px 64px;display:grid;grid-template-columns:235px minmax(0,1fr);gap:32px}
+@media (max-width:860px){.wrap{grid-template-columns:minmax(0,1fr)}nav.toc{position:static!important}}
+header.hero{grid-column:1/-1;border-bottom:1px solid var(--border);padding-bottom:16px}
+header.hero h1{margin:0 0 6px;font-size:28px;line-height:1.25}
+header.hero p{margin:0;color:var(--muted)}
+.badges{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.badge{display:inline-block;font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px;background:var(--accent-soft);color:var(--accent);border:1px solid var(--border)}
+nav.toc{position:sticky;top:16px;align-self:start;font-size:13.5px}
+nav.toc ol{list-style:none;margin:0;padding:0}
+nav.toc a{display:block;padding:4px 8px;border-radius:6px;color:var(--muted);text-decoration:none}
+nav.toc a:hover{background:var(--accent-soft);color:var(--text)}
+main{min-width:0}
+h2{font-size:21px;margin:40px 0 10px;padding-top:8px;border-top:1px solid var(--border)}
+h2:first-child{margin-top:0;border-top:0;padding-top:0}
+h3{font-size:16px;margin:24px 0 8px}
+a{color:var(--accent)}
+code{font:13px/1.5 ui-monospace,SFMono-Regular,Consolas,"Liberation Mono",monospace;background:var(--code-bg);padding:1px 5px;border-radius:4px;overflow-wrap:anywhere}
+.code-wrap{position:relative;margin:10px 0 16px}
+pre{background:var(--code-bg);border:1px solid var(--border);border-radius:8px;padding:12px 14px;overflow-x:auto;margin:0}
+pre code{background:none;padding:0;font-size:12.5px;overflow-wrap:normal}
+.copy-btn{position:absolute;top:8px;right:8px;font:600 12px/1 system-ui,sans-serif;padding:5px 10px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer}
+.copy-btn:hover{border-color:var(--accent);color:var(--accent)}
+.copy-btn.copied{background:var(--ok-bg);border-color:var(--ok);color:var(--ok)}
+.specs{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin:12px 0 18px}
+.spec{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px}
+.spec b{display:block;font-size:13px;margin-bottom:6px;color:var(--accent)}
+.spec div{font-size:13px;margin-top:4px;overflow-wrap:anywhere}
+.table-wrap{overflow-x:auto;margin:10px 0 16px}
+table{border-collapse:collapse;width:100%;font-size:14px;background:var(--surface)}
+th,td{border:1px solid var(--border);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:var(--code-bg);font-weight:600}
+.note{border-left:4px solid var(--accent);background:var(--accent-soft);padding:10px 14px;border-radius:0 8px 8px 0;margin:12px 0}
+.warn{border-left:4px solid var(--warn-border);background:var(--warn-bg);padding:10px 14px;border-radius:0 8px 8px 0;margin:12px 0}
+.btn{display:inline-block;background:var(--accent);color:#fff;text-decoration:none;padding:8px 14px;border-radius:8px;font-weight:600}
+.arch{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:12px 0 16px}
+.arch .box{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px;flex:1 1 180px;min-width:0}
+.arch .box b{display:block}
+.arch .box small{color:var(--muted)}
+.arch .arrow{color:var(--muted);font-weight:700;flex:0 0 auto}
+@media (max-width:600px){.arch{flex-direction:column;align-items:stretch}.arch .arrow{text-align:center;transform:rotate(90deg)}}
+footer{color:var(--muted);font-size:13px;margin-top:48px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="hero">
+  <h1>Tích hợp Ảnh theo series vào website của bạn</h1>
+  <p>Tài liệu dành cho lập trình viên web. Hỗ trợ nhúng trọn bộ giao diện bằng <b>Module Federation</b> (Vite &amp; Webpack 5), nhúng nhanh qua <b>Iframe</b>, hoặc tự xây UI gọi trực tiếp <b>REST API PrintAgent cục bộ</b>.</p>
+  <div class="badges">
+    <span class="badge">⚡ Vite MF: printagentx/PhotoSeries</span>
+    <span class="badge">📦 Webpack 5 MF: remote_photo_series/PhotoSeries</span>
+    <span class="badge">🪟 Iframe: ?view=photo-series&amp;embed=1</span>
+    <span class="badge">🔌 PrintAgent REST API (:9173)</span>
+  </div>
+</header>
+
+<nav class="toc" aria-label="Mục lục">
+  <ol>
+    <li><a href="#module-federation">1. Module Federation (Nhanh nhất)</a></li>
+    <li><a href="#props">2. Props &amp; Callbacks</a></li>
+    <li><a href="#iframe">3. Nhúng qua Iframe</a></li>
+    <li><a href="#tong-quan">4. Kiến trúc hoạt động</a></li>
+    <li><a href="#cai-agent">5. Cài PrintAgent</a></li>
+    <li><a href="#cors">6. Origin, CORS &amp; loopback</a></li>
+    <li><a href="#quy-trinh">7. Quy trình REST API</a></li>
+    <li><a href="#api">8. Danh sách API cục bộ</a></li>
+    <li><a href="#ket-qua">9. Cấu trúc kết quả JSON</a></li>
+    <li><a href="#trang-thai">10. Trạng thái</a></li>
+    <li><a href="#anh">11. Ảnh xem trước &amp; khuôn mặt</a></li>
+    <li><a href="#loc">12. Lọc tất cả ảnh (selected)</a></li>
+    <li><a href="#js">13. Ví dụ JavaScript thuần</a></li>
+    <li><a href="#loi">14. Xử lý lỗi</a></li>
+    <li><a href="#bao-mat">15. Bảo mật &amp; dữ liệu</a></li>
+  </ol>
+</nav>
+
+<main>
+<section id="module-federation">
+<h2>1. Module Federation (Khuyên dùng)</h2>
+<p>Bạn có thể nạp trực tiếp component <code>PhotoSeriesSection</code> vào ứng dụng React (18 hoặc 19) mà không cần sao chép mã nguồn hay build lại mỗi khi module cập nhật. CSS của component được tách riêng và đóng gói dưới selector <code>.photo-series-panel</code> nên không làm lệch giao diện trang host.</p>
+
+<div class="specs">
+  <div class="spec">
+    <b>Vite Module Federation (ESM)</b>
+    <div>Remote Entry: <code>https://dir.toolxprint.com/remoteEntry.js</code></div>
+    <div>Scope: <code>printagentx</code></div>
+    <div>Module: <code>./PhotoSeries</code> (alias: <code>./PhotoSeriesSection</code>)</div>
+    <div>Dùng chung file entry với <code>./FileExplorer</code>.</div>
+  </div>
+  <div class="spec">
+    <b>Webpack 5 / CRA Module Federation</b>
+    <div>Remote Entry: <code>https://toolxprint.com/modules/photo-series/remoteEntry.js</code></div>
+    <div>Scope: <code>remote_photo_series</code></div>
+    <div>Module: <code>./PhotoSeries</code> (alias: <code>./PhotoSeriesSection</code>)</div>
+    <div>Dành cho host Webpack 5, CRA/CRACO hoặc nạp runtime bằng thẻ script.</div>
+  </div>
+</div>
+
+<h3>1A. Host dùng Vite (<code>@originjs/vite-plugin-federation</code>)</h3>
+<p>Cài plugin: <code>npm install -D @originjs/vite-plugin-federation</code>, sau đó cấu hình <code>vite.config.js</code>:</p>
+<div class="code-wrap"><button type="button" class="copy-btn">Sao chép</button><pre><code>import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import federation from '@originjs/vite-plugin-federation';
+
+export default defineConfig({
+  plugins: [
+    react(),
+    federation({
+      name: 'my_host_app',
+      remotes: {
+        printagentx: 'https://dir.toolxprint.com/remoteEntry.js',
+      },
+      shared: ['react', 'react-dom'],
+    }),
+  ],
+  build: {
+    target: 'esnext',
+  },
+});</code></pre></div>
+
+<p>Nhúng vào trang React:</p>
+<div class="code-wrap"><button type="button" class="copy-btn">Sao chép</button><pre><code>import React, { Suspense } from 'react';
+
+const PhotoSeries = React.lazy(() =&gt; import('printagentx/PhotoSeries'));
+
+export default function PhotoFilterPage() {
+  return (
+    &lt;Suspense fallback={&lt;div style={{ padding: 32 }}&gt;Đang nạp Ảnh theo series…&lt;/div&gt;}&gt;
+      &lt;PhotoSeries
+        agentBaseUrl="http://127.0.0.1:9173"
+        defaultN={3}
+        showDocsButton={false}
+        syncUrlQuery={false}
+        onJobComplete={(job) =&gt; console.log('Hoàn tất:', job.series.length, 'nhóm')}
+        onExportComplete={(state) =&gt; console.log('Đã xuất ảnh đẹp vào:', state.folder)}
+      /&gt;
+    &lt;/Suspense&gt;
+  );
+}</code></pre></div>
+
+<p>Nếu dự án host dùng TypeScript, thêm file khai báo <code>src/types/printagentx.d.ts</code>:</p>
+<div class="code-wrap"><button type="button" class="copy-btn">Sao chép</button><pre><code>declare module 'printagentx/PhotoSeries' {
+  import type { ComponentType } from 'react';
+  export interface PhotoSeriesProps {
+    defaultFolder?: string;
+    agentBaseUrl?: string;
+    defaultN?: number;
+    showDocsButton?: boolean;
+    initialShowDocs?: boolean;
+    docsUrl?: string;
+    storageKey?: string | null;
+    syncUrlQuery?: boolean;
+    embedded?: boolean;
+    className?: string;
+    onJobComplete?: (job: any) =&gt; void;
+    onExportComplete?: (state: any) =&gt; void;
+  }
+  export const PhotoSeriesSection: ComponentType&lt;PhotoSeriesProps&gt;;
+  export default PhotoSeriesSection;
+}</code></pre></div>
+
+<h3>1B. Host dùng Webpack 5 / CRA</h3>
+<p>Khai báo remote trong <code>webpack.config.js</code>:</p>
+<div class="code-wrap"><button type="button" class="copy-btn">Sao chép</button><pre><code>const { ModuleFederationPlugin } = require('webpack').container;
+
+module.exports = {
+  plugins: [
+    new ModuleFederationPlugin({
+      name: 'my_webpack_host',
+      remotes: {
+        remote_photo_series:
+          'remote_photo_series@https://toolxprint.com/modules/photo-series/remoteEntry.js',
+      },
+      shared: {
+        react: { singleton: true },
+        'react-dom': { singleton: true },
+      },
+    }),
+  ],
+};
+
+// Trong React component:
+// const PhotoSeries = React.lazy(() =&gt; import('remote_photo_series/PhotoSeries'));</code></pre></div>
+
+<p>Hoặc nạp động ở runtime mà <b>không cần sửa cấu hình Webpack</b>:</p>
+<div class="code-wrap"><button type="button" class="copy-btn">Sao chép</button><pre><code>import React, { lazy, Suspense } from 'react';
+import * as ReactDOM from 'react-dom';
+
+function loadRemotePhotoSeries() {
+  const URL = 'https://toolxprint.com/modules/photo-series/remoteEntry.js';
+  return new Promise((resolve, reject) =&gt; {
+    if (window.remote_photo_series) return resolve();
+    const s = document.createElement('script');
+    s.src = `${URL}?_t=${Date.now()}`;
+    s.onload = () =&gt; resolve();
+    s.onerror = () =&gt; reject(new Error('Không thể tải remoteEntry.js'));
+    document.head.appendChild(s);
+  }).then(async () =&gt; {
+    const container = window.remote_photo_series;
+    await container.init({
+      react: { [React.version]: { get: () =&gt; Promise.resolve(() =&gt; React), loaded: 1, eager: true } },
+      'react-dom': { [React.version]: { get: () =&gt; Promise.resolve(() =&gt; ReactDOM), loaded: 1, eager: true } },
+    });
+    const factory = await container.get('./PhotoSeries');
+    const mod = factory();
+    return { default: mod.default || mod.PhotoSeriesSection };
+  });
+}
+
+const RemotePhotoSeries = lazy(loadRemotePhotoSeries);
+
+export function PhotoFilterWidget() {
+  return (
+    &lt;Suspense fallback={&lt;div&gt;Đang nạp Ảnh theo series…&lt;/div&gt;}&gt;
+      &lt;RemotePhotoSeries showDocsButton={false} syncUrlQuery={false} /&gt;
+    &lt;/Suspense&gt;
+  );
+}</code></pre></div>
+
+<div class="warn">Khi nhúng bằng Module Federation, trình duyệt chạy mã dưới <b>origin của website host</b>. Do đó cần thêm origin của website bạn vào <code>web.allowed_origins</code> trong PrintAgent (xem <a href="#cors">mục 6</a>).</div>
+</section>
+
+<section id="props">
+<h2>2. Props &amp; Callbacks</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Prop</th><th>Kiểu / Mặc định</th><th>Ý nghĩa</th></tr></thead>
+<tbody>
+<tr><td><code>agentBaseUrl</code></td><td><code>string</code> · <code>"http://127.0.0.1:9173"</code></td><td>Địa chỉ PrintAgent cục bộ trên máy người dùng.</td></tr>
+<tr><td><code>defaultFolder</code></td><td><code>string</code> · <code>""</code></td><td>Điền sẵn đường dẫn thư mục ảnh (nếu muốn bỏ qua bước chọn thủ công).</td></tr>
+<tr><td><code>defaultN</code></td><td><code>number</code> · <code>3</code></td><td>Số ảnh đẹp nhất mặc định trong mỗi series (1–20).</td></tr>
+<tr><td><code>showDocsButton</code></td><td><code>boolean</code> · <code>true</code></td><td>Hiện hoặc ẩn nút <code>📖 Tích hợp web</code> ở góc phải tiêu đề.</td></tr>
+<tr><td><code>initialShowDocs</code></td><td><code>boolean</code> · <code>false</code></td><td>Mở thẳng màn hình tài liệu tích hợp web khi vừa render.</td></tr>
+<tr><td><code>docsUrl</code></td><td><code>string</code> · tự nhận diện</td><td>Ghi đè đường dẫn trang tài liệu REST API đầy đủ.</td></tr>
+<tr><td><code>storageKey</code></td><td><code>string | null</code> · <code>"photo-series-v2-job"</code></td><td>Khóa lưu <code>job_id</code> gần nhất vào <code>localStorage</code>; truyền <code>null</code> để tắt.</td></tr>
+<tr><td><code>syncUrlQuery</code></td><td><code>boolean</code> · <code>true</code></td><td>Đặt <code>false</code> khi nhúng vào ứng dụng có router riêng để không sửa query <code>?photo_job=</code>.</td></tr>
+<tr><td><code>embedded</code></td><td><code>boolean</code> · <code>false</code></td><td>Bỏ margin ngoài và bo góc để khít khung chứa.</td></tr>
+<tr><td><code>className</code></td><td><code>string</code> · <code>""</code></td><td>Class CSS bổ sung cho khung gốc <code>.photo-series-panel</code>.</td></tr>
+<tr><td><code>onJobComplete</code></td><td><code>(job) =&gt; void</code></td><td>Gọi khi lượt nhóm và phân tích ngữ cảnh hoàn tất.</td></tr>
+<tr><td><code>onExportComplete</code></td><td><code>(state) =&gt; void</code></td><td>Gọi khi tác vụ <b>Lọc tất cả ảnh</b> chép xong sang thư mục <code>selected</code>.</td></tr>
+</tbody></table></div>
+</section>
+
+<section id="iframe">
+<h2>3. Nhúng nhanh qua Iframe (HTML, PHP, Laravel, WordPress, Vue, Angular)</h2>
+<p>Nếu hệ thống của bạn không dùng React/Vite/Webpack, hoặc muốn tích hợp mà không phải cấu hình <code>allowed_origins</code> trên từng máy trạm, dùng chế độ embed gọn của <code>dir.toolxprint.com</code>:</p>
+<div class="code-wrap"><button type="button" class="copy-btn">Sao chép</button><pre><code>&lt;iframe
+  src="https://dir.toolxprint.com/?view=photo-series&amp;embed=1"
+  title="Ảnh theo series"
+  style="width: 100%; height: 820px; border: 1px solid #34435c; border-radius: 16px;"
+  allow="clipboard-read; clipboard-write; local-network-access"
+&gt;&lt;/iframe&gt;</code></pre></div>
+<p>Tham số URL hỗ trợ kèm theo: <code>&amp;hide_docs=1</code> (ẩn nút Tích hợp web), <code>&amp;n=3</code> (đặt số ảnh mặc định), <code>&amp;docs=1</code> (mở sẵn tài liệu), <code>&amp;agent_url=http://127.0.0.1:9173</code>.</p>
+</section>
+
+<section id="tong-quan">
+<h2>4. Kiến trúc hoạt động</h2>
+<p>Người dùng chọn một thư mục ảnh (JPEG, RAW, ARW) trên máy của họ. <b>PrintAgent</b> — chương trình chạy nền tại <code>http://127.0.0.1:9173</code> — đọc ảnh và EXIF, nhóm các ảnh cùng lần chụp, chấm điểm kỹ thuật và chọn N ảnh đẹp nhất trong mỗi nhóm. Việc này chạy hoàn toàn trên máy người dùng, không sửa ảnh gốc.</p>
+<p>Để có câu mô tả ngữ cảnh, agent chỉ gửi <b>một thumbnail nhỏ của ảnh đại diện</b> mỗi nhóm lên máy chủ phân tích ngữ cảnh. Máy chủ ghép nhiều nhóm vào một lưới (tối đa 16 ô) để trả lời nhanh, rồi trả về ngữ cảnh, số người và vị trí khuôn mặt cho từng nhóm.</p>
+<div class="arch" role="img" aria-label="Trang web gọi PrintAgent trên máy người dùng; PrintAgent gửi thumbnail ảnh đại diện lên máy chủ phân tích ngữ cảnh">
+  <div class="box"><b>Trang web của bạn</b><small>Module Federation, Iframe hoặc gọi REST API trực tiếp</small></div>
+  <div class="arrow">→</div>
+  <div class="box"><b>PrintAgent</b><small><code>http://127.0.0.1:9173</code><br><code>/api/photo-series/…</code></small></div>
+  <div class="arrow">→</div>
+  <div class="box"><b>Máy chủ phân tích ngữ cảnh</b><small><code>genai.toolxprint.com</code> — agent tự gọi, trang web không gọi trực tiếp</small></div>
+</div>
+<p>Trang web của bạn <b>chỉ nói chuyện với PrintAgent</b>. Mọi việc gửi ảnh lên máy chủ, thử lại, xếp hàng và lưu kết quả do agent đảm nhận. Kết quả được lưu trên máy người dùng (<code>%APPDATA%\GoxPrintAgent\photo-series</code>), nên mỗi máy chỉ thấy các lượt chạy của chính nó.</p>
+</section>
+
+<section id="cai-agent">
+<h2>5. Cài PrintAgent</h2>
+<p>Người dùng cần cài PrintAgent trên máy Windows của họ:</p>
+<p><a class="btn" href="https://download.goxprint.com/printagentinstall.exe">Tải trình cài PrintAgent</a></p>
+<p>Trình cài tải agent mới nhất, kiểm tra kích thước và SHA-256 trước khi thay bản đang chạy. Agent cần khoảng 1 GB trống trên ổ C (bản cài khoảng 86 MB và phần giải nén vào <code>%TEMP%</code> mỗi lần chạy).</p>
+<p>Kiểm tra agent đã sẵn sàng bằng <code>GET /api/photo-series/health</code>:</p>
+<div class="code-wrap"><button type="button" class="copy-btn">Sao chép</button><pre><code>{"ready": true, "version": 3, "raw_supported": true, "analysis_images_per_series": 1,
+ "cancel_supported": true, "grouping_version": 3}</code></pre></div>
+<p>Coi là sẵn sàng khi <code>ready === true</code> và <code>version &gt;= 3</code>.</p>
+</section>
+
+<section id="cors">
+<h2>6. Origin, CORS &amp; loopback</h2>
+<ul>
+  <li>Agent chỉ nhận kết nối từ chính máy đó (<code>127.0.0.1</code> / <code>::1</code>).</li>
+  <li>Mặc định cho phép: <code>https://dir.toolxprint.com</code>, <code>https://toolxprint.com</code>, <code>https://mzpic.com</code>, <code>https://app.mzpic.com</code>, <code>http://localhost:5174</code>, <code>http://127.0.0.1:5174</code>. Website khác bị trả <code>403 {"error": "Origin không được phép"}</code>.</li>
+  <li>Mọi request <code>POST</code> phải có header <code>X-Photo-Series: 1</code>; thiếu thì trả <code>403</code>. Body JSON gửi kèm <code>Content-Type: application/json</code>.</li>
+  <li>CORS: agent trả <code>Access-Control-Allow-Origin</code> đúng origin của bạn, cho phép header <code>Content-Type, X-Photo-Series</code> và phương thức <code>GET, POST, OPTIONS</code>.</li>
+</ul>
+<h3>Cho phép website của bạn trên một máy</h3>
+<p>Thêm origin vào <code>%APPDATA%\GoxPrintAgent\settings.json</code> trên <b>từng máy</b> cài agent (cùng khóa với tab Preset máy in):</p>
+<div class="code-wrap"><button type="button" class="copy-btn">Sao chép</button><pre><code>{
+  "web": {
+    "allowed_origins": ["https://shop.example.com"]
+  }
+}</code></pre></div>
+<div class="warn">Origin được so khớp <b>chính xác</b> (scheme + tên miền + cổng, không có đường dẫn). <code>https://shop.example.com</code> không cho phép <code>http://shop.example.com</code> hay <code>https://shop.example.com.evil.test</code>. Giá trị <code>"*"</code> bị bỏ qua.</div>
+<p>Trang HTTPS gọi <code>http://127.0.0.1</code> có thể làm trình duyệt hỏi quyền <i>truy cập mạng cục bộ</i>. Người dùng cần bấm cho phép một lần.</p>
+</section>
+
+<section id="quy-trinh">
+<h2>7. Quy trình một lượt (REST API)</h2>
+<ol>
+  <li><code>GET /health</code> — kiểm tra agent.</li>
+  <li><code>POST /pick-folder</code> — mở hộp chọn thư mục của Windows trên máy người dùng, nhận đường dẫn. (Hoặc tự nhập đường dẫn nếu bạn đã biết.)</li>
+  <li><code>POST /jobs</code> với <code>{folder, config: {n}}</code> — bắt đầu nhóm và phân tích, nhận <code>job_id</code>.</li>
+  <li><code>GET /jobs/{job_id}</code> mỗi 2 giây cho tới khi <code>running === false</code>. Hiển thị tiến độ từ <code>status</code>, <code>processed/total</code> và số nhóm đã có ngữ cảnh.</li>
+  <li>Hiển thị các nhóm (<code>series</code>), ảnh xem trước qua <code>/images/…</code>.</li>
+  <li>Tuỳ chọn: <code>POST /jobs/{job_id}/cancel</code>, <code>POST /jobs/{job_id}/resume</code>, <code>POST /jobs/{job_id}/export</code>.</li>
+</ol>
+<div class="note">Mỗi agent chỉ chạy <b>một</b> lượt tại một thời điểm. Một thư mục khoảng 1.100 tệp (570 lần chụp, khoảng 110 nhóm) mất khoảng 6–7 phút.</div>
+</section>
+
+<section id="api">
+<h2>8. Danh sách API cục bộ</h2>
+<p>Tất cả đường dẫn có tiền tố <code>http://127.0.0.1:9173/api/photo-series</code>.</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Phương thức &amp; đường dẫn</th><th>Body</th><th>Trả về</th></tr></thead>
+<tbody>
+<tr><td><code>GET /health</code></td><td>—</td><td><code>200</code> trạng thái agent (mục 5)</td></tr>
+<tr><td><code>POST /pick-folder</code></td><td>—</td><td><code>200 {"folder": "D:\\Anh\\Cuoi", "cancelled": false}</code>; người dùng đóng hộp thoại: <code>{"folder": "", "cancelled": true}</code>; hộp thoại đang mở: <code>409</code>; lỗi: <code>500</code></td></tr>
+<tr><td><code>POST /jobs</code></td><td><code>{"folder": "...", "config": {"n": 3}}</code> — <code>n</code> = số ảnh đẹp nhất mỗi nhóm, 1–20</td><td><code>202 {"job_id": "…"}</code>; thư mục/cấu hình sai: <code>400</code>; đang có lượt khác chạy: <code>409</code></td></tr>
+<tr><td><code>GET /jobs/{job_id}</code></td><td>—</td><td><code>200</code> toàn bộ lượt chạy (mục 9); không có: <code>404</code></td></tr>
+<tr><td><code>POST /jobs/{job_id}/cancel</code></td><td>—</td><td><code>202 {"job_id", "status", "cancel_requested"}</code>. Các nhóm đã có ngữ cảnh được giữ.</td></tr>
+<tr><td><code>POST /jobs/{job_id}/resume</code></td><td>—</td><td><code>202 {"job_id"}</code> chạy tiếp các nhóm chưa xong; đã xong: <code>200</code>; đang có lượt khác: <code>409</code></td></tr>
+<tr><td><code>POST /jobs/{job_id}/export</code></td><td><code>{"count": 1}</code> — 1, 2 hoặc 3</td><td><code>202</code> trạng thái lọc (mục 12); lượt còn đang chạy hoặc đang lọc: <code>409</code>; <code>count</code> sai: <code>400</code></td></tr>
+<tr><td><code>GET /jobs/{job_id}/export</code></td><td>—</td><td><code>200</code> tiến độ / kết quả lọc; chưa lọc: <code>404</code></td></tr>
+<tr><td><code>GET /jobs/{job_id}/images/{image_id}/{kind}</code></td><td>—</td><td>ảnh, <code>kind</code> = <code>thumbnail</code> | <code>preview</code> | <code>primary</code> (mục 11)</td></tr>
+</tbody></table></div>
+<p>Lỗi luôn có dạng <code>{"error": "thông báo tiếng Việt"}</code>.</p>
+</section>
+
+<section id="ket-qua">
+<h2>9. Cấu trúc kết quả JSON</h2>
+<h3>Lượt chạy (<code>GET /jobs/{job_id}</code>)</h3>
+<div class="code-wrap"><button type="button" class="copy-btn">Sao chép</button><pre><code>{
+  "job_id": "729252d5…", "folder": "C:\\Users\\…\\Anh", "status": "completed", "running": false,
+  "processed": 569, "total": 569, "total_files": 1137, "elapsed_seconds": 387.3,
+  "error": null, "errors": [{"filename": "…", "error": "Không đọc được ảnh"}],
+  "people_split": {"checked": 44, "split": 5, "added": 6, "failed_requests": 0},
+  "series": [ … ]
+}</code></pre></div>
+<p><code>processed/total</code> đếm <b>lần chụp</b>: cặp JPEG + RAW cùng tên tính là một. <code>people_split</code> cho biết bao nhiêu nhóm đã được tách theo người (ví dụ nhiều cặp khách chụp lần lượt trước cùng một phông).</p>
+<h3>Nhóm (<code>series[]</code>)</h3>
+<div class="code-wrap"><button type="button" class="copy-btn">Sao chép</button><pre><code>{
+  "series_id": "1a6b1a3b…", "status": "completed",
+  "representative_image_id": "f3bf8cc4…",
+  "capture_time_start": "2026:09:20 10:33:14", "capture_time_end": "2026:09:20 10:33:52",
+  "images": [ … ],
+  "result": {
+    "context": "Hai phụ nữ chụp ảnh cạnh cổng hoa.",
+    "images": [{
+      "image_id": "f3bf8cc4…", "people_count": 2,
+      "description": "…", "clothing": "…", "background": "…",
+      "color_issues": [], "ocr": "", "tags": ["ảnh cưới"], "uncertainties": [],
+      "faces": [[0.31, 0.12, 0.42, 0.27], [0.55, 0.14, 0.66, 0.29]]
+    }]
+  }
+}</code></pre></div>
+<p><code>result</code> chỉ có khi nhóm đã có ngữ cảnh. <code>result.images</code> mô tả <b>ảnh đại diện</b> của nhóm.</p>
+<h3>Ảnh (<code>series[].images[]</code>)</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Trường</th><th>Ý nghĩa</th></tr></thead>
+<tbody>
+<tr><td><code>image_id</code>, <code>filename</code></td><td>mã ảnh dùng cho <code>/images/…</code>; tên tệp</td></tr>
+<tr><td><code>rank</code>, <code>score</code></td><td>hạng trong nhóm (1 = đẹp nhất), điểm 0–100</td></tr>
+<tr><td><code>selected</code></td><td><code>true</code> nếu nằm trong N ảnh đẹp nhất</td></tr>
+<tr><td><code>analysis_representative</code></td><td><code>true</code> với ảnh đại diện đã gửi lấy ngữ cảnh</td></tr>
+<tr><td><code>formats</code>, <code>source_files</code></td><td>ví dụ <code>["JPG", "ARW"]</code> và đường dẫn các tệp của cùng lần chụp</td></tr>
+<tr><td><code>original_width</code>, <code>original_height</code></td><td>kích thước ảnh gốc sau khi xoay theo EXIF</td></tr>
+<tr><td><code>capture_time_original</code></td><td>giờ chụp EXIF</td></tr>
+<tr><td><code>warnings</code></td><td><code>suspected_color_outlier</code> (nghi lệch màu), <code>missing_capture_time</code>, <code>underexposure</code> (nhiều vùng tối), <code>highlight_clipping</code> (nghi cháy sáng)</td></tr>
+</tbody></table></div>
+</section>
+
+<section id="trang-thai">
+<h2>10. Trạng thái</h2>
+<h3>Lượt chạy (<code>status</code>)</h3>
+<div class="table-wrap"><table>
+<thead><tr><th>Giá trị</th><th>Ý nghĩa</th></tr></thead>
+<tbody>
+<tr><td><code>pending</code></td><td>vừa tạo</td></tr>
+<tr><td><code>scanning</code></td><td>đang đọc ảnh, nhóm và chọn ảnh</td></tr>
+<tr><td><code>splitting</code></td><td>đang tách nhóm theo người</td></tr>
+<tr><td><code>selected</code></td><td>đã nhóm và chọn ảnh, chờ lấy ngữ cảnh</td></tr>
+<tr><td><code>preparing</code>, <code>uploading</code>, <code>analyzing</code></td><td>đang chuẩn bị, gửi ảnh đại diện, chờ ngữ cảnh</td></tr>
+<tr><td><code>completed</code></td><td>xong</td></tr>
+<tr><td><code>failed</code></td><td>dừng vì lỗi; xem <code>error</code>, có thể <code>resume</code></td></tr>
+<tr><td><code>cancelling</code>, <code>cancelled</code></td><td>đang hủy / đã hủy</td></tr>
+</tbody></table></div>
+<p>Luôn dùng trường <code>running</code> để biết lượt còn chạy hay không.</p>
+<h3>Nhóm (<code>series[].status</code>)</h3>
+<p><code>selected</code> → <code>preparing</code> → <code>uploading</code> → <code>queued</code> / <code>assigned</code> / <code>processing</code> → <code>completed</code>. Có thể là <code>failed</code> (agent tự thử lại vài lần) hoặc <code>cancelled</code>.</p>
+</section>
+
+<section id="anh">
+<h2>11. Ảnh xem trước &amp; khuôn mặt</h2>
+<div class="table-wrap"><table>
+<thead><tr><th><code>kind</code></th><th>Nội dung</th></tr></thead>
+<tbody>
+<tr><td><code>thumbnail</code></td><td>WEBP, cạnh dài tối đa 480 px, toàn khung — dùng cho lưới và danh sách</td></tr>
+<tr><td><code>preview</code></td><td>JPEG, cạnh dài tối đa 800 px. Với ảnh được chọn có vẽ elip đỏ đánh dấu vùng trung tâm</td></tr>
+<tr><td><code>primary</code></td><td>WEBP crop trung tâm, chỉ có với ảnh đại diện</td></tr>
+</tbody></table></div>
+<p>Mọi ảnh trong nhóm đều có <code>thumbnail</code> và <code>preview</code> (ảnh không được chọn được tạo ở lần xem đầu tiên). Dùng thẳng URL agent trong thẻ <code>&lt;img&gt;</code>:</p>
+<div class="code-wrap"><button type="button" class="copy-btn">Sao chép</button><pre><code>&lt;img src="http://127.0.0.1:9173/api/photo-series/jobs/{job_id}/images/{image_id}/thumbnail"&gt;</code></pre></div>
+<h3>Vẽ khuôn mặt</h3>
+<p><code>faces</code> là danh sách khung <code>[x0, y0, x1, y1]</code> theo tỉ lệ 0–1 của <b>ảnh đại diện toàn khung</b> (đã xoay theo EXIF). Đặt lớp phủ có cùng tỉ lệ <code>original_width / original_height</code> với ảnh rồi vẽ:</p>
+<div class="code-wrap"><button type="button" class="copy-btn">Sao chép</button><pre><code>const frame = document.createElement('div');
+frame.style.cssText = `position:relative;aspect-ratio:${img.original_width}/${img.original_height};height:240px`;
+frame.innerHTML = `&lt;img src="${thumbUrl}" style="width:100%;height:100%"&gt;`;
+for (const [x0, y0, x1, y1] of faces) {
+  const mark = document.createElement('span');
+  mark.style.cssText = `position:absolute;left:${x0*100}%;top:${y0*100}%;`
+    + `width:${(x1-x0)*100}%;height:${(y1-y0)*100}%;border:2px solid #2ecc40;border-radius:50%`;
+  frame.append(mark);
+}</code></pre></div>
+</section>
+
+<section id="loc">
+<h2>12. Lọc tất cả ảnh (selected)</h2>
+<p><code>POST /jobs/{job_id}/export</code> với <code>{"count": 1|2|3}</code> chép N ảnh hạng cao nhất của <b>mỗi nhóm</b> vào thư mục con mới <code>selected</code> trong thư mục ảnh (<code>selected_2</code>, <code>selected_3</code>… nếu đã có). Ảnh gốc giữ nguyên.</p>
+<ul>
+  <li>Cặp JPEG + RAW của cùng lần chụp được chép cả hai.</li>
+  <li>Bản chép JPEG được ghi ngữ cảnh vào EXIF (<code>ImageDescription</code>, <code>XPComment</code>, <code>UserComment</code>) mà không nén lại ảnh. RAW giữ nguyên, ngữ cảnh ghi vào tệp <code>.xmp</code> đi kèm.</li>
+  <li>Lượt nhóm sau tự bỏ qua các thư mục <code>selected*</code>.</li>
+</ul>
+<p>Trạng thái trả về (theo dõi bằng <code>GET</code> mỗi giây cho tới khi <code>status !== "running"</code>):</p>
+<div class="code-wrap"><button type="button" class="copy-btn">Sao chép</button><pre><code>{"status": "completed", "count": 2, "done": 14, "total": 14,
+ "folder": "D:\\Anh\\Cuoi\\selected", "images": 14, "files": 28,
+ "exif": 14, "sidecars": 14, "without_context": 0, "errors": []}</code></pre></div>
+</section>
+
+<section id="js">
+<h2>13. Ví dụ JavaScript thuần</h2>
+<div class="code-wrap"><button type="button" class="copy-btn">Sao chép</button><pre><code>const AGENT = 'http://127.0.0.1:9173/api/photo-series';
+const post = (path, body) =&gt; fetch(AGENT + path, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', 'X-Photo-Series': '1' },
+  body: body ? JSON.stringify(body) : undefined,
+}).then(async r =&gt; { const data = await r.json(); if (!r.ok) throw new Error(data.error); return data; });
+const get = path =&gt; fetch(AGENT + path, { cache: 'no-store' }).then(r =&gt; r.json());
+
+async function agentReady() {
+  try { const h = await get('/health'); return h.ready &amp;&amp; h.version &gt;= 3; }
+  catch { return false; }
+}
+
+async function runFolder(n = 3, onProgress = () =&gt; {}) {
+  const { folder, cancelled } = await post('/pick-folder');
+  if (cancelled) return null;
+  const { job_id } = await post('/jobs', { folder, config: { n } });
+  for (;;) {
+    const job = await get(`/jobs/${job_id}`);
+    onProgress(job);
+    if (!job.running) return job;
+    await new Promise(r =&gt; setTimeout(r, 2000));
+  }
+}
+
+async function exportBest(jobId, count = 1) {
+  let state = await post(`/jobs/${jobId}/export`, { count });
+  while (state.status === 'running') {
+    await new Promise(r =&gt; setTimeout(r, 1000));
+    state = await get(`/jobs/${jobId}/export`);
+  }
+  return state;
+}</code></pre></div>
+</section>
+
+<section id="loi">
+<h2>14. Xử lý lỗi</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Hiện tượng</th><th>Nguyên nhân &amp; cách xử lý</th></tr></thead>
+<tbody>
+<tr><td><code>fetch</code> ném <code>TypeError</code> ở <code>/health</code></td><td>PrintAgent chưa chạy/chưa cài, hoặc trình duyệt chặn truy cập mạng cục bộ. Hiện nút tải trình cài (mục 5) và nhắc cho phép truy cập mạng cục bộ.</td></tr>
+<tr><td><code>403 Origin không được phép</code></td><td>Origin của bạn chưa có trong <code>web.allowed_origins</code> trên máy đó (mục 6).</td></tr>
+<tr><td><code>403 Thiếu header xác thực local</code></td><td>Request <code>POST</code> thiếu <code>X-Photo-Series: 1</code>.</td></tr>
+<tr><td><code>409 Đang có tác vụ xử lý ảnh</code></td><td>Agent đang chạy lượt khác. Chờ xong hoặc hủy lượt đó.</td></tr>
+<tr><td><code>status: "failed"</code></td><td>Đọc <code>error</code>. Thường do mất kết nối tới máy chủ ngữ cảnh; gọi <code>resume</code> để chạy tiếp các nhóm chưa xong.</td></tr>
+<tr><td>Nhóm <code>failed</code> lẻ tẻ</td><td>Agent đã tự thử lại. Gọi <code>resume</code> để thử thêm.</td></tr>
+<tr><td><code>errors[]</code> trong lượt chạy</td><td>Tệp không đọc được (hỏng, định dạng lạ); các tệp khác vẫn được xử lý.</td></tr>
+</tbody></table></div>
+</section>
+
+<section id="bao-mat">
+<h2>15. Bảo mật &amp; dữ liệu</h2>
+<ul>
+  <li>Ảnh gốc và đường dẫn tệp <b>không rời khỏi máy</b> người dùng, trừ khi chính trang web của bạn đọc và gửi đi. Kết quả có trường <code>folder</code>, <code>path</code>, <code>source_files</code> chứa đường dẫn trên máy người dùng — đừng gửi về máy chủ của bạn nếu không cần.</li>
+  <li>Agent chỉ gửi lên máy chủ ngữ cảnh: thumbnail toàn khung (tối đa 480 px) và crop trung tâm (tối đa 1280 px) của <b>ảnh đại diện</b> mỗi nhóm, kèm thumbnail một ảnh mỗi đoạn chụp khi cần tách nhóm theo người. Không gửi ảnh gốc độ phân giải đầy đủ.</li>
+  <li>Chỉ thêm origin bạn kiểm soát vào <code>allowed_origins</code>: mọi trang ở origin đó đều có thể mở hộp chọn thư mục, đọc ảnh xem trước và chép ảnh trên máy người dùng.</li>
+  <li><code>/pick-folder</code> mở hộp thoại Windows trên máy người dùng; chỉ gọi khi người dùng bấm nút.</li>
+</ul>
+</section>
+
+<footer>Tài liệu tích hợp Ảnh theo series — hỗ trợ Module Federation (Vite &amp; Webpack 5), Iframe embed và PrintAgent REST API cục bộ.</footer>
+</main>
+</div>
+<script>
+document.querySelectorAll('.copy-btn').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    var code = btn.parentElement.querySelector('code');
+    if (!code) return;
+    var text = code.textContent || '';
+    var done = function() {
+      btn.textContent = '✓ Đã sao chép';
+      btn.classList.add('copied');
+      setTimeout(function() { btn.textContent = 'Sao chép'; btn.classList.remove('copied'); }, 2000);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(done);
+    } else {
+      var ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+      done();
+    }
+  });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,86 @@
+const { chromium } = require('@playwright/test');
+const path = require('node:path');
+const fs = require('node:fs');
+const os = require('node:os');
+const assert = require('node:assert/strict');
+(async () => {
+  const browser = await chromium.launch({ channel: 'chrome', headless: true });
+  const context = await browser.newContext({ viewport: { width: 1083, height: 809 }, permissions: ['local-network-access'] });
+  const cdp = await browser.newBrowserCDPSession();
+  const contexts = await cdp.send('Target.getBrowserContexts');
+  await cdp.send('Browser.setPermission', { permission: { name: 'loopback-network' }, setting: 'granted', origin: 'https://dir.toolxprint.com', browserContextId: contexts.browserContextIds[0] });
+  const page = await context.newPage();
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  const url = 'https://dir.toolxprint.com/?view=photo-series&photo_job=downloads-remote-smoke';
+  const api = 'http://127.0.0.1:9173/api/photo-series';
+  await page.goto(url, { waitUntil: 'domcontentloaded' });
+  await page.getByText('PrintAgent đã kết nối', { exact: true }).waitFor();
+  await page.locator('.ps-series-card').first().waitFor();
+  assert.equal(await page.getByRole('button', { name: 'Deploy', exact: true }).count(), 0);
+  assert.equal(await page.getByRole('link', { name: 'Tải Agent mới', exact: true }).getAttribute('href'), 'https://download.goxprint.com/printagentinstall.exe');
+  assert.ok((await page.getByRole('link', { name: 'Tải Agent mới', exact: true }).boundingBox()).width > 100);
+  assert.equal(await page.getByLabel('Số ảnh đẹp nhất trong series').count(), 1);
+  for (const text of ['Khoảng chụp tối đa (giây)', 'Tab ID phân tích (tùy chọn)', 'Khóa API (nếu được cấu hình)']) assert.equal(await page.getByText(text, { exact: true }).count(), 0);
+  assert.equal(await page.locator('.ps-progress').count(), 0);
+  assert.ok((await page.locator('.ps-sample').innerText()).includes('Chưa phân tích toàn bộ thư mục'));
+  await page.waitForFunction(() => [...document.querySelectorAll('.ps-playing-card img')].every(image => image.complete && image.naturalWidth > 0));
+  const cards = page.locator('.ps-playing-card');
+  assert.notEqual(await cards.first().evaluate(element => getComputedStyle(element).transform), 'none');
+  const headerButton = await page.locator('.ps-header button').boundingBox();
+  const controls = await page.locator('.ps-controls').boundingBox();
+  assert.ok(headerButton.y < controls.y);
+  assert.equal(await page.locator('.ps-header').evaluate(element => getComputedStyle(element).backgroundColor), 'rgba(0, 0, 0, 0)');
+  await page.screenshot({ path: path.resolve('output/photo-series-v2-test/controller-ui-v2.png'), fullPage: true });
+  await page.getByRole('button', { name: 'Xem nhóm 1', exact: true }).click();
+  assert.equal(await page.getByRole('dialog').locator('figure').count(), 3);
+  await page.getByRole('button', { name: 'Đóng', exact: true }).click();
+  // Pagination uses a browser-only fixture; it does not create or relabel server jobs.
+  const actual = await (await context.request.get(`${api}/jobs/downloads-remote-smoke`)).json();
+  for (const [index, group] of actual.series.entries()) {
+    const representative = group.images.find(image => image.image_id === group.representative_image_id) || group.images.find(image => image.analysis_representative);
+    assert.equal(await page.locator('.ps-representative-name').nth(index).innerText(), `Ngữ cảnh: ${representative.filename}`);
+  }
+  const positions = await Promise.all([0, 1, 2].map(index => page.locator('.ps-series-card').nth(index).boundingBox()));
+  assert.ok(positions.every(box => Math.abs(box.y-positions[0].y) < 1), 'Three groups should share one row at 1083px');
+  const paged = { ...actual, series: Array.from({ length: 14 }, (_, index) => ({ ...actual.series[index % actual.series.length], series_id: `fixture-${index}` })) };
+  await page.route(`${api}/jobs/downloads-remote-smoke`, route => route.fulfill({ json: paged }));
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.getByText('Trang 1/2', { exact: true }).waitFor();
+  assert.equal(await page.locator('.ps-series-card').count(), 12);
+  await page.getByRole('button', { name: 'Sau →', exact: true }).click();
+  assert.equal(await page.locator('.ps-series-card').count(), 2);
+  await page.getByRole('button', { name: '← Trước', exact: true }).click();
+  assert.equal(await page.locator('.ps-series-card').count(), 12);
+  await page.unroute(`${api}/jobs/downloads-remote-smoke`);
+  // Real RAW-only job through the installed exe. Mock only the user's native chooser selection.
+  let rawJob = 'not rerun for layout-only checks';
+  if (!process.argv.includes('--layout-only')) {
+  const input = path.resolve('output/photo-series-ui-raw-input');
+  fs.mkdirSync(input, { recursive: true });
+  fs.copyFileSync(path.join(os.homedir(), 'Downloads/1/1/DSC04205.ARW'), path.join(input, 'RAW_ONLY.ARW'));
+  await page.route(`${api}/pick-folder`, route => route.fulfill({ json: { folder: input, cancelled: false } }));
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.getByText('PrintAgent đã kết nối', { exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Chọn thư mục', exact: true }).click();
+  await page.getByText(input, { exact: true }).waitFor();
+  const create = page.waitForResponse(response => response.url() === `${api}/jobs` && response.request().method() === 'POST');
+  await page.getByRole('button', { name: 'Nhóm & phân tích', exact: true }).click();
+  const created = await create;
+  assert.equal(created.status(), 202);
+  const payload = created.request().postDataJSON();
+  assert.deepEqual(Object.keys(payload.config), ['n']);
+  const id = (await created.json()).job_id;
+  await page.getByText('1/1 nhóm có ngữ cảnh', { exact: true }).waitFor({ timeout: 120000 });
+  const raw = await (await context.request.get(`${api}/jobs/${id}`)).json();
+  assert.equal(raw.status, 'completed');
+  assert.equal(raw.series[0].images[0].filename, 'RAW_ONLY.ARW');
+  assert.equal(raw.series[0].result.images.length, 1);
+  assert.equal(raw.series[0].images.filter(image => image.upload_bytes > 0).length, 1);
+  fs.writeFileSync(path.resolve('output/photo-series-v2-test/ui-raw-job.json'), JSON.stringify(raw, null, 2));
+  rawJob = id;
+  }
+  assert.equal(errors.length, 0, errors.join('\n'));
+  console.log(JSON.stringify({ ui: 'passed', scope: 'DirToolx', paging: '12+2 groups', representativeFilenames: 'exact', compactColumns: 3, nativeSelection: 'mocked, native runtime tested separately', rawJob, serverImagesPerGroup: 1, errors: errors.length }));
+  await browser.close();
+})().catch(error => { console.error(error); process.exit(1); });

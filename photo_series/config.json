@@ -1,0 +1,18 @@
+{
+  "n": 3,
+  "grouping_mode": "auto",
+  "series_gap_seconds": 8,
+  "similarity_threshold": 0.80,
+  "analysis_dimension": 640,
+  "crop_dimension": 1280,
+  "thumbnail_dimension": 480,
+  "ellipse_ratio": 0.6666666666666666,
+  "quality": 85,
+  "timeout": 60,
+  "max_retries": 3,
+  "server_url": "https://genai.toolxprint.com",
+  "api_key": "",
+  "target_tab_id": "",
+  "poll_seconds": 3,
+  "concurrent_uploads": 32
+}

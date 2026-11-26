@@ -1,0 +1,62 @@
+const { chromium } = require('@playwright/test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+(async () => {
+  const recovery = JSON.parse(fs.readFileSync('output/photo-series-v3-test/recovery.json', 'utf8'));
+  const local = 'http://127.0.0.1:9173/api/photo-series';
+  const deadline = Date.now()+480000;
+  let userJob;
+  while (Date.now() < deadline) {
+    userJob = await (await fetch(`${local}/jobs/${recovery.replacement_job_id}`)).json();
+    if (!userJob.running) break;
+    await new Promise(resolve => setTimeout(resolve, 3000));
+  }
+  assert.equal(userJob.running, false, 'Do not interrupt user work for cancellation acceptance');
+  const browser = await chromium.launch({ channel: 'chrome', headless: true });
+  const context = await browser.newContext({ viewport: { width: 1083, height: 809 }, permissions: ['local-network-access'] });
+  const cdp = await browser.newBrowserCDPSession(); const contexts = await cdp.send('Target.getBrowserContexts');
+  await cdp.send('Browser.setPermission', { permission: { name: 'loopback-network' }, setting: 'granted', origin: 'https://dir.toolxprint.com', browserContextId: contexts.browserContextIds[0] });
+  const page = await context.newPage();
+  const input = path.resolve('output/photo-series-cancel-input'); fs.mkdirSync(input, { recursive: true });
+  fs.copyFileSync(path.join(os.homedir(), 'Downloads/1/1/DSC04205.JPG'), path.join(input, 'CANCEL_TEST.JPG'));
+  await page.route(`${local}/pick-folder`, route => route.fulfill({ json: { folder: input, cancelled: false } }));
+  await page.goto('https://dir.toolxprint.com/?view=photo-series', { waitUntil: 'domcontentloaded' });
+  await page.getByText('PrintAgent đã kết nối', { exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Chọn thư mục', exact: true }).click();
+  await page.getByText(input, { exact: true }).waitFor();
+  const create = page.waitForResponse(response => response.url() === `${local}/jobs` && response.request().method() === 'POST');
+  await page.getByRole('button', { name: 'Nhóm & phân tích', exact: true }).click();
+  const response = await create; assert.equal(response.status(), 202);
+  const id = (await response.json()).job_id;
+  let job;
+  for (let index = 0; index < 50; index++) {
+    job = await (await fetch(`${local}/jobs/${id}`)).json();
+    if (job.series[0]?.remote_job_id) break;
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
+  assert.ok(job.series[0]?.remote_job_id, 'Test must reach a real remote assignment');
+  const timer = page.getByRole('timer', { name: 'Thời gian đã xử lý' }); await timer.waitFor();
+  const before = await timer.innerText();
+  await page.waitForFunction(value => document.querySelector('[role="timer"]').textContent !== value, before, { timeout: 6000 });
+  await page.screenshot({ path: path.resolve('output/photo-series-v3-test/before-cancel.png'), fullPage: true });
+  await page.getByRole('button', { name: 'Hủy tiến trình', exact: true }).click();
+  await page.getByText('Đã hủy tiến trình ·', { exact: false }).waitFor({ timeout: 20000 });
+  job = await (await fetch(`${local}/jobs/${id}`)).json();
+  assert.equal(job.status, 'cancelled'); assert.equal(job.running, false);
+  const frozen = job.elapsed_seconds;
+  await new Promise(resolve => setTimeout(resolve, 1200));
+  assert.equal((await (await fetch(`${local}/jobs/${id}`)).json()).elapsed_seconds, frozen);
+  const remote = await (await fetch(`https://genai.toolxprint.com/api/vision/series/${job.series[0].remote_job_id}`)).json();
+  assert.equal(remote.status, 'cancelled');
+  assert.equal(job.remote_cancel_acknowledged, true);
+  assert.equal(await page.locator('.ps-progress').count(), 0);
+  const unchanged = await (await fetch(`${local}/jobs/${recovery.replacement_job_id}`)).json();
+  assert.equal(unchanged.status, userJob.status);
+  await page.screenshot({ path: path.resolve('output/photo-series-v3-test/after-cancel.png'), fullPage: true });
+  const report = { job_id: id, status: job.status, frozen_elapsed_seconds: frozen, remote_status: remote.status, user_job_untouched: true };
+  fs.writeFileSync('output/photo-series-v3-test/cancellation-acceptance.json', JSON.stringify(report, null, 2));
+  console.log(JSON.stringify(report));
+  await browser.close();
+})().catch(error => { console.error(error); process.exit(1); });
